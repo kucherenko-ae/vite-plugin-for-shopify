@@ -1,7 +1,7 @@
 {
-  "name": "vite-plugin-for-shopify",
-  "version": "1.0.0",
-  "main": "./dist/index.js",
+  "name": "@alexander.k/vite-plugin-for-shopify",
+  "version": "1.0.1",
+  "main": "./dist/index.mjs",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -11,8 +11,10 @@
   },
   "keywords": [
     "vite",
+    "vite-plugin",
     "plugin",
-    "shopify"
+    "shopify",
+    "liquid"
   ],
   "author": "Alexander Kucherenko",
   "license": "MIT",

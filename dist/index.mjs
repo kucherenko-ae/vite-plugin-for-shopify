@@ -20,7 +20,7 @@ import { readdir, readFile, writeFile, unlink, access, constants } from 'fs/prom
  * @param {string} [options.globalAssetsPathFunciton] - The helper function for `experimental.renderBuiltUrl`.
  * @returns {Object} The Vite plugin configuration.
  */
-const vitePlugin = (options = {}) => {
+const shopifyVitePlugin = (options = {}) => {
   const IS_DEV = options.mode === 'development'
   let themeRoot = options.themeRoot ?? './'
   let snippetFilename = options.snippetFilename ?? 'vite.liquid'
@@ -288,4 +288,4 @@ const snippetEnd = `
   endif
 `
 
-export { vitePlugin as default }
+export default shopifyVitePlugin
