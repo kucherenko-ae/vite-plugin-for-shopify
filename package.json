@@ -1,0 +1,24 @@
+{
+  "name": "vite-plugin-for-shopify",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kucherenko-ae/vite-plugin-for-shopify.git"
+  },
+  "keywords": [
+    "vite",
+    "plugin",
+    "shopify"
+  ],
+  "author": "Alexander Kucherenko",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/kucherenko-ae/vite-plugin-for-shopify/issues"
+  },
+  "homepage": "https://github.com/kucherenko-ae/vite-plugin-for-shopify#readme",
+  "description": ""
+}
