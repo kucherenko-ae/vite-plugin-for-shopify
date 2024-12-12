@@ -1,92 +1,127 @@
 import { resolve } from 'node:path'
 import { readdir, readFile, writeFile, unlink, access, constants } from 'fs/promises'
 
+const PLUGIN_NAME = 'vite-plugin-for-shopify'
+const DEFAULT_OUT_DIR = './assets'
+const DYNAMIC_IMPORT_HELPER_FUNCTION_NAME = '_viteAssetPath'
+
 /**
  * A vite plugin for Shopify theme development.
- * 
+ *
  * The plugin creates a snippet (`vite.liquid` by default) in `themeRoot/snippets` directory
  * which can be used to include all the entries build by vite in the theme.
- * 
+ *
  * The plugin also removes all the files in `build.outDir` which are not present in the new build.
- * 
- * The plugin also adds a helper function `globalAssetsPathFunciton` to `experimental.renderBuiltUrl`
+ *
  * which can be used to access the global assets path.
- * 
+ *
  * @param {Object} options - The plugin options.
- * @param {string} [options.mode] - env mode.
  * @param {string} [options.themeRoot='./'] - The root of the theme.
  * @param {string} [options.snippetFilename='vite.liquid'] - The name of the snippet file.
- * @param {RegExp} [options.fileNameRegex] - A regex to filter out files in `build.outDir` which created by vite.
- * @param {string} [options.globalAssetsPathFunciton] - The helper function for `experimental.renderBuiltUrl`.
+ * @param {Object} [options.cleanup]
+ * @param {RegExp} [options.cleanup.fileNameRegex] - A regex to filter out files in `build.outDir` which created by vite.
  * @returns {Object} The Vite plugin configuration.
  */
 const shopifyVitePlugin = (options = {}) => {
-  const IS_DEV = options.mode === 'development'
-  let themeRoot = options.themeRoot ?? './'
-  let snippetFilename = options.snippetFilename ?? 'vite.liquid'
-  let manifestFilename = '_manifest.json'
-  let input = {}
-  let outDir = './assets'
+  const _options = {
+    ...options,
+    themeRoot: options.themeRoot ?? './',
+    snippetFilename: options.snippetFilename ?? 'vite.liquid',
+    cleanup: {
+      ...options.cleanup,
+      ...options.fileNameRegex !== undefined && options.cleanup?.fileNameRegex === undefined && { fileNameRegex: options.fileNameRegex } // support for previous options format
+    }
+  }
 
+  const plugins = [
+    config(_options),
+    snippet(_options)
+  ]
+
+  _options.cleanup.fileNameRegex !== undefined && plugins.push(cleanup(_options))
+
+  return plugins
+}
+
+const config = (options) => {
   return {
-    name: 'vite-plugin-for-shopify',
-    // Prepare config
+    name: `${PLUGIN_NAME}:config`,
     config (config) {
-      input = config.build?.rollupOptions?.input ?? input
-      outDir = config.build?.outDir ?? outDir
-      manifestFilename = typeof config.build?.manifest === 'string'
-        ? config.build.manifest
-        : manifestFilename
-
-      // also normalize outDir
-      if (outDir.endsWith('/')) {
-        outDir = outDir.slice(0, outDir.length - 1)
-      }
-
-      // add manifest to build
       return {
         ...config,
         build: {
           ...config.build,
-          manifest: manifestFilename,
+          // add manifest to build
+          manifest: typeof config.build?.manifest === 'string'
+            ? config.build.manifest
+            : '_manifest.json'
         },
-        // TODO: check if this is needed. for now it's used for imports helper
         experimental: {
           ...config.experimental,
-          ...options.globalAssetsPathFunciton !== undefined && {
-            renderBuiltUrl (filename, { hostType }) {
-              if (hostType === 'js') {
-                return {
-                  runtime: `${options.globalAssetsPathFunciton}(${JSON.stringify(filename)})`
-                }
+          renderBuiltUrl (filename, { hostType }) {
+            if (hostType === 'js') {
+              return {
+                runtime: `${DYNAMIC_IMPORT_HELPER_FUNCTION_NAME}(${JSON.stringify(filename)})`
               }
-      
-              return { relative: true }
             }
+
+            return { relative: true }
           }
         }
       }
+    }
+  }
+}
+
+const cleanup = (options) => {
+  let outDir = DEFAULT_OUT_DIR
+
+  return {
+    name: `${PLUGIN_NAME}:cleanup`,
+    enforce: 'post',
+
+    configResolved (config) {
+      outDir = config.build?.outDir ?? outDir
     },
-    // Remove previous files in assets folder, not included in the new list
-    ...options.fileNameRegex !== undefined && {
-      async writeBundle (opt, bundle) {
-        const fileNames = Object.keys(bundle)
-        const files = await readdir(resolve(outDir))
-        let consoleReport = ''
-  
-        await Promise.all(files.map(async file => {
-          if (options.fileNameRegex.test(file) && !fileNames.includes(file)) {
-            consoleReport += `${file}\n`
-            return await unlink(resolve(outDir, file))
-          }
-          return null
-        }))
-  
-        consoleReport.length > 0 &&
-        console.log('\x1b[36m%s\x1b[0m', `\n\ndirectory "${outDir}" was cleaned, removed files:`)
-        console.log('\x1b[33m%s\x1b[0m', consoleReport)
-      } 
+
+    async writeBundle (opt, bundle) {
+      const fileNames = Object.keys(bundle)
+      const files = await readdir(outDir)
+      let consoleReport = ''
+
+      await Promise.all(files.map(async file => {
+        if (options.cleanup.fileNameRegex.test(file) && !fileNames.includes(file)) {
+          consoleReport += `${file}\n`
+          return await unlink(resolve(outDir, file))
+        }
+        return null
+      }))
+
+      consoleReport.length > 0 &&
+      console.log(`\x1b[36m\n\ndirectory "${outDir}" was cleaned, removed files:\x1b[33m\n${consoleReport}\x1b[0m`)
+    }
+  }
+}
+
+const snippet = (options = {}) => {
+  let resolvedConfig
+  let themeRoot = options.themeRoot ?? './'
+  let snippetFilename = options.snippetFilename ?? 'vite.liquid'
+  let manifestFilename = '_manifest.json'
+  let input = {}
+  let outDir = DEFAULT_OUT_DIR
+
+  return {
+    name: `${PLUGIN_NAME}:snippet`,
+    enforce: 'post',
+
+    configResolved (config) {
+      resolvedConfig = config
+      input = config.build?.rollupOptions?.input ?? input
+      outDir = config.build?.outDir ?? outDir
+      manifestFilename = config.build.manifest
     },
+
     // Create snippet from manifest
     async closeBundle () {
       const manifestPath = resolve(outDir, manifestFilename)
@@ -100,7 +135,7 @@ const shopifyVitePlugin = (options = {}) => {
         let path = input[key]
         // notmalize path
         if (path.startsWith('./')) {
-          path = path.substring(2) 
+          path = path.substring(2)
         }
         entryNameByPath[path] = key
       })
@@ -117,8 +152,11 @@ const shopifyVitePlugin = (options = {}) => {
             const styleFiles = new Set()
             const jsFiles = new Set()
             const assets = []
-            const entryName = name ?? entryNameByPath[src] ?? src.substring(src.lastIndexOf('/') + 1, src.lastIndexOf('.'))
-  
+            const entryName =
+              name ??
+              entryNameByPath[src] ??
+              src.substring(src.lastIndexOf('/') + 1, src.lastIndexOf('.'))
+
             const handleEntryImports = ({ src, file, css = [], imports = [] }) => {
               if (isStyles(src)) {
                 // check if entry is css
@@ -133,25 +171,25 @@ const shopifyVitePlugin = (options = {}) => {
                 })
               }
             }
-  
+
             handleEntryImports({ src, file, css, imports })
             !isStyles(src) && jsFiles.add(file)
-  
+
             styleFiles.size > 0 && assets.push(assignStyleFiles([...styleFiles]))
             jsFiles.size > 0 && assets.push(assignScriptFiles([...jsFiles]))
-  
+
             allEntries.push(entryTag(entryName, assets.join('')))
           }
         })
 
         // Update vite.liquid file in snippets
         await writeFile(
-          resolve(`${themeRoot}snippets/${snippetFilename}`),
+          resolve(themeRoot, `./snippets/${snippetFilename}`),
           `{%- liquid${snippetStart}\n  case entry${allEntries.join('')}\n  endcase\n${snippetEnd}\n-%}`
         )
 
         // Remove manifest
-        !IS_DEV && (await unlink(manifestPath))
+        resolvedConfig.mode !== 'development' && (await unlink(manifestPath))
 
       } catch (err) {
         console.error(err)
@@ -162,7 +200,7 @@ const shopifyVitePlugin = (options = {}) => {
 
 /**
  * Checks if a file exists at the given path.
- * 
+ *
  * @param {string} path - The file path to check.
  * @returns {Promise<boolean>} - A promise that resolves to true if the file exists, otherwise false.
  */
@@ -188,16 +226,32 @@ const entryTag = (entryName, assets) => `
 
 const snippetStart = `
   # ------------------------------------------------------------
-  # IMPORTANT: Do not edit this file directly.
+  #
+  # IMPORTANT:
+  #
+  # Do not edit this file directly.
   # This file is generated automatically by vite plugin.
+  # 
   # ------------------------------------------------------------
+  #
+  # IMPORTANT:
+  #
+  # If you use dynamic imports, then you need to add this snippet
+  # once to your theme without any parameters
+  # it will add helper function for correct urls of dynamic imports
+  # {{ render 'vite' }}
+  #
+  # ------------------------------------------------------------
+  #
   # PARAMETERS:
   #
   # @param {string} entry - entry name, as in the vite.config.js
   # @param {boolean} preload_stylesheet - add preload for stylesheets
   # @param {boolean} only_css - add only css files
   # @param {boolean} only_js - add only js files
+  #
   # ------------------------------------------------------------
+  #
   # EXTRA PARAMETERS:
   #
   # @param {boolean} import_mode - for cases when you need to import
@@ -207,7 +261,9 @@ const snippetStart = `
   # for example "{ funcName }"
   # @param {boolean} dynamic_import - for case when you need to import
   # js module asynchronously
+  #
   # ------------------------------------------------------------
+  #
   # USAGE EXAMPLES:
   #
   # - default
@@ -219,17 +275,26 @@ const snippetStart = `
   # - only scripts
   # {{ render 'vite', entry: 'entryName', only_js: true }}
   # - import styles
-  # {{ render 'vite', entry: 'entryName', import_mode: true }}
+  # {{ render 'vite', entry: 'entryName', import_mode: true, only_css: true }}
   # - import js module
-  # {{ render 'vite', entry: 'entryName', import_mode: true, import_name: '{ funcName }' }}
+  # {{ render 'vite', entry: 'entryName', import_mode: true, only_js: true, import_name: '{ funcName }' }}
   # - import js module asynchronously
-  # {{ render 'vite', entry: 'entryName', import_mode: true, dynamic_import: true, import_name: '{ funcName }' }}
+  # {{ render 'vite', entry: 'entryName', import_mode: true, only_js: true, dynamic_import: true, import_name: '{ funcName }' }}
+  #
   # ------------------------------------------------------------
 
   assign style_files = ''
   assign js_files = ''
   assign css = true
   assign js = true
+
+  if entry == blank
+    echo '<script>(() => {'
+    echo 'const path = '
+    echo 'vite.js' | asset_url | split: 'vite' | first | split: '.com' | last | json
+    echo ';window.${DYNAMIC_IMPORT_HELPER_FUNCTION_NAME} = (filename) => path + filename;'
+    echo '})()</script>'
+  endif
 
   if only_js
     assign css = false
