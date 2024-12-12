@@ -28,12 +28,21 @@ export default {
 }
 ```
 
-### Add snippet to <head></head> without params once
+### Add snippet to `<head></head>` without params once
 
 it will add the helper function for dynamic import in your code
+for example, to the `theme.liquid` file
 
 ```liquid
-{% render 'vite' %}
+<html>
+  <head>
+    ...
+    {% render 'vite' %}
+  </head>
+  <body>
+    ...
+  </body>
+</html>
 ```
 
 ### Use snippet with entryName as in inputs, for example:
@@ -43,8 +52,7 @@ inputs in the vite.config.js
 ```js
 export default defineConfig({
   plugins: [
-    shopifyVitePlugin(),
-    ...
+    shopifyVitePlugin()
   ],
   build: {
     rollupOptions: {
@@ -53,13 +61,9 @@ export default defineConfig({
         coolSection: './some-path/collSection.js',
         utils: './some-path/utils.js',
         pageStyles: './some-path/pageStyles.css'
-        ...
-      },
-      ...
-    },
-    ...
-  },
-  ...
+      }
+    }
+  }
 })
 ```
 
